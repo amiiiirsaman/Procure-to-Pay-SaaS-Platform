@@ -1,0 +1,19 @@
+export { DashboardView } from './DashboardView';
+export { RequisitionsView } from './RequisitionsView';
+export { PurchaseOrdersView } from './PurchaseOrdersView';
+export { InvoicesView } from './InvoicesView';
+export { ApprovalsView } from './ApprovalsView';
+export { SuppliersView } from './SuppliersView';
+export { GoodsReceiptsView } from './GoodsReceiptsView';
+export { PaymentsView } from './PaymentsView';
+export { ComplianceView } from './ComplianceView';
+export { RequisitionDetailView } from './RequisitionDetailView';
+export { PODetailView } from './PODetailView';
+export { InvoiceDetailView } from './InvoiceDetailView';
+export { GoodsReceiptDetailView } from './GoodsReceiptDetailView';
+export { TestingSandboxView } from './TestingSandboxView';
+
+// New AArete P2P Platform Views
+export { P2PDashboardView } from './P2PDashboardView';
+export { AutomationView } from './AutomationView';
+export { ProcurementGraphView } from './ProcurementGraphView';

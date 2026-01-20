@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
+    </linearGradient>
+    <linearGradient id="skinGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5d6c6"/>
+      <stop offset="100%" style="stop-color:#e8c4b8"/>
+    </linearGradient>
+    <linearGradient id="hairGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a3728"/>
+      <stop offset="100%" style="stop-color:#2d1f14"/>
+    </linearGradient>
+    <linearGradient id="suitGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2c3e50"/>
+      <stop offset="100%" style="stop-color:#1a252f"/>
+    </linearGradient>
+    <linearGradient id="shirtGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#f0f0f0"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="64" fill="url(#bgGrad)"/>
+  
+  <!-- Suit/shoulders -->
+  <ellipse cx="64" cy="130" rx="52" ry="40" fill="url(#suitGrad)"/>
+  
+  <!-- Shirt collar -->
+  <path d="M48 95 L64 108 L80 95" fill="url(#shirtGrad)" stroke="#ddd" stroke-width="0.5"/>
+  
+  <!-- Tie -->
+  <path d="M61 95 L64 130 L67 95 L64 100 Z" fill="#E85C0D"/>
+  
+  <!-- Neck -->
+  <ellipse cx="64" cy="88" rx="12" ry="8" fill="url(#skinGrad)"/>
+  
+  <!-- Head/face -->
+  <ellipse cx="64" cy="58" rx="28" ry="32" fill="url(#skinGrad)"/>
+  
+  <!-- Hair -->
+  <path d="M36 50 Q36 25 64 22 Q92 25 92 50 Q90 35 64 32 Q38 35 36 50" fill="url(#hairGrad)"/>
+  
+  <!-- Hair sides -->
+  <path d="M36 50 Q34 55 36 62" fill="url(#hairGrad)"/>
+  <path d="M92 50 Q94 55 92 62" fill="url(#hairGrad)"/>
+  
+  <!-- Ears -->
+  <ellipse cx="36" cy="58" rx="5" ry="7" fill="url(#skinGrad)"/>
+  <ellipse cx="92" cy="58" rx="5" ry="7" fill="url(#skinGrad)"/>
+  
+  <!-- Eyebrows -->
+  <path d="M48 48 Q53 45 58 47" stroke="#3d2817" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M70 47 Q75 45 80 48" stroke="#3d2817" stroke-width="2" fill="none" stroke-linecap="round"/>
+  
+  <!-- Eyes -->
+  <ellipse cx="53" cy="55" rx="6" ry="4" fill="white"/>
+  <ellipse cx="75" cy="55" rx="6" ry="4" fill="white"/>
+  <circle cx="53" cy="55" r="2.5" fill="#2c3e50"/>
+  <circle cx="75" cy="55" r="2.5" fill="#2c3e50"/>
+  <circle cx="54" cy="54" r="0.8" fill="white"/>
+  <circle cx="76" cy="54" r="0.8" fill="white"/>
+  
+  <!-- Nose -->
+  <path d="M64 55 Q66 62 64 68 Q62 68 60 66" fill="none" stroke="#d4a574" stroke-width="1.5" stroke-linecap="round"/>
+  
+  <!-- Mouth - friendly smile -->
+  <path d="M55 75 Q64 82 73 75" fill="none" stroke="#c9967a" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Subtle cheek highlights -->
+  <ellipse cx="45" cy="65" rx="5" ry="3" fill="#f5c4b8" opacity="0.4"/>
+  <ellipse cx="83" cy="65" rx="5" ry="3" fill="#f5c4b8" opacity="0.4"/>
+</svg>

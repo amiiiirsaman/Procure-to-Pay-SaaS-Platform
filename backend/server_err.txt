@@ -1,0 +1,21 @@
+INFO:     Started server process [21976]
+INFO:     Waiting for application startup.
+2026-01-20 11:09:40,442 - app.main - INFO - Starting P2P SaaS Platform API...
+2026-01-20 11:09:40,467 - app.main - INFO - Environment: development
+2026-01-20 11:09:40,491 - app.main - INFO - About to call init_db()...
+2026-01-20 11:09:40,516 - app.main - INFO - DB init skipped - will create tables on first DB access
+2026-01-20 11:09:40,541 - app.main - INFO - Application startup complete - ready to serve requests
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2026-01-20 11:09:59,837 - botocore.credentials - INFO - Found credentials in environment variables.
+2026-01-20 11:10:04,141 - app.agents.base_agent - INFO - InvoiceAgent completed task successfully
+2026-01-20 11:10:04,143 - app.api.routes - INFO - Step 5: FORCING fallback logic for consistent key_checks
+2026-01-20 11:10:04,144 - app.api.routes - INFO - Step 5: Applied fallback key_checks successfully
+2026-01-20 11:18:45,748 - app.agents.base_agent - INFO - FraudAgent completed task successfully
+2026-01-20 11:18:45,749 - app.api.routes - INFO - Step 6: FORCING fallback logic for consistent key_checks
+2026-01-20 11:18:45,750 - app.api.routes - ERROR - Step 6 fallback failed: FraudAgent._build_key_checks_from_fraud_analysis() missing 1 required positional argument: 'risk_score'
+2026-01-20 11:18:45,750 - app.api.routes - INFO - Step 6: Applied fallback key_checks successfully
+2026-01-20 11:20:46,880 - app.agents.base_agent - INFO - FraudAgent completed task successfully
+2026-01-20 11:20:46,881 - app.api.routes - INFO - Step 6: FORCING fallback logic for consistent key_checks
+2026-01-20 11:20:46,882 - app.api.routes - ERROR - Step 6 fallback failed: FraudAgent._build_key_checks_from_fraud_analysis() missing 1 required positional argument: 'risk_score'
+2026-01-20 11:20:46,882 - app.api.routes - INFO - Step 6: Applied fallback key_checks successfully

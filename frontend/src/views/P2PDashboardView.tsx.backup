@@ -1,0 +1,942 @@
+import { useState, useMemo } from 'react';
+import {
+  FileText,
+  DollarSign,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  Plus,
+  Search,
+  Filter,
+  ChevronDown,
+  X,
+  MessageSquare,
+  Send,
+  Bot,
+  User,
+  ArrowRight,
+  TrendingUp,
+  Package,
+  Building2,
+} from 'lucide-react';
+
+// Types
+interface Requisition {
+  id: string;
+  title: string;
+  requestor: string;
+  department: string;
+  amount: number;
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'processing';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  createdAt: string;
+  supplier: string;
+  category: string;
+  currentStep: number;
+}
+
+interface KPI {
+  label: string;
+  value: string;
+  change: string;
+  changeType: 'positive' | 'negative' | 'neutral';
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+// Mock data
+const MOCK_REQUISITIONS: Requisition[] = [
+  {
+    id: 'REQ-2026-001',
+    title: 'Office Supplies - Q1 2026',
+    requestor: 'Sarah Johnson',
+    department: 'Operations',
+    amount: 12500,
+    status: 'approved',
+    priority: 'medium',
+    createdAt: '2026-01-10',
+    supplier: 'Staples Inc.',
+    category: 'Office Supplies',
+    currentStep: 5,
+  },
+  {
+    id: 'REQ-2026-002',
+    title: 'IT Equipment Upgrade',
+    requestor: 'Michael Chen',
+    department: 'IT',
+    amount: 85000,
+    status: 'pending',
+    priority: 'high',
+    createdAt: '2026-01-12',
+    supplier: 'Dell Technologies',
+    category: 'IT Equipment',
+    currentStep: 2,
+  },
+  {
+    id: 'REQ-2026-003',
+    title: 'Marketing Materials',
+    requestor: 'Emily Davis',
+    department: 'Marketing',
+    amount: 24000,
+    status: 'processing',
+    priority: 'medium',
+    createdAt: '2026-01-13',
+    supplier: 'PrintCo Services',
+    category: 'Marketing',
+    currentStep: 4,
+  },
+  {
+    id: 'REQ-2026-004',
+    title: 'Server Infrastructure',
+    requestor: 'James Wilson',
+    department: 'IT',
+    amount: 150000,
+    status: 'pending',
+    priority: 'urgent',
+    createdAt: '2026-01-14',
+    supplier: 'AWS',
+    category: 'Cloud Services',
+    currentStep: 1,
+  },
+  {
+    id: 'REQ-2026-005',
+    title: 'Facility Maintenance',
+    requestor: 'Lisa Brown',
+    department: 'Facilities',
+    amount: 8500,
+    status: 'approved',
+    priority: 'low',
+    createdAt: '2026-01-09',
+    supplier: 'CleanPro Services',
+    category: 'Facilities',
+    currentStep: 6,
+  },
+  {
+    id: 'REQ-2026-006',
+    title: 'Training Program Materials',
+    requestor: 'David Kim',
+    department: 'HR',
+    amount: 15000,
+    status: 'draft',
+    priority: 'low',
+    createdAt: '2026-01-14',
+    supplier: 'TBD',
+    category: 'Training',
+    currentStep: 0,
+  },
+  {
+    id: 'REQ-2026-007',
+    title: 'Software Licenses - Annual Renewal',
+    requestor: 'Michael Chen',
+    department: 'IT',
+    amount: 45000,
+    status: 'rejected',
+    priority: 'high',
+    createdAt: '2026-01-08',
+    supplier: 'Microsoft',
+    category: 'Software',
+    currentStep: 2,
+  },
+];
+
+const KPI_DATA: KPI[] = [
+  {
+    label: 'Total Requisitions',
+    value: '156',
+    change: '+12%',
+    changeType: 'positive',
+    icon: FileText,
+  },
+  {
+    label: 'Pending Approvals',
+    value: '23',
+    change: '-8%',
+    changeType: 'positive',
+    icon: Clock,
+  },
+  {
+    label: 'Total Spend (MTD)',
+    value: '$1.2M',
+    change: '+5%',
+    changeType: 'neutral',
+    icon: DollarSign,
+  },
+  {
+    label: 'Compliance Rate',
+    value: '98.5%',
+    change: '+2.1%',
+    changeType: 'positive',
+    icon: CheckCircle,
+  },
+];
+
+// Utility functions
+const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
+
+const getStatusColor = (status: Requisition['status']): string => {
+  const colors = {
+    draft: 'bg-surface-100 text-surface-600',
+    pending: 'bg-amber-100 text-amber-700',
+    approved: 'bg-green-100 text-green-700',
+    rejected: 'bg-red-100 text-red-700',
+    processing: 'bg-blue-100 text-blue-700',
+  };
+  return colors[status];
+};
+
+const getPriorityColor = (priority: Requisition['priority']): string => {
+  const colors = {
+    low: 'bg-surface-100 text-surface-600',
+    medium: 'bg-amber-100 text-amber-700',
+    high: 'bg-orange-100 text-orange-700',
+    urgent: 'bg-red-100 text-red-700',
+  };
+  return colors[priority];
+};
+
+export function P2PDashboardView() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: "Hello! I'm your AI procurement assistant. I can help you create a new requisition. Just describe what you need to purchase, and I'll help fill out the form for you.",
+      timestamp: new Date(),
+    },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Form state for new requisition
+  const [newRequisition, setNewRequisition] = useState({
+    title: '',
+    description: '',
+    department: '',
+    category: '',
+    amount: '',
+    supplier: '',
+    priority: 'medium',
+    justification: '',
+  });
+
+  // Filter requisitions
+  const filteredRequisitions = useMemo(() => {
+    return MOCK_REQUISITIONS.filter((req) => {
+      const matchesSearch =
+        req.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        req.requestor.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || req.status === statusFilter;
+      const matchesDepartment = departmentFilter === 'all' || req.department === departmentFilter;
+      return matchesSearch && matchesStatus && matchesDepartment;
+    });
+  }, [searchQuery, statusFilter, departmentFilter]);
+
+  // Get unique departments
+  const departments = useMemo(() => {
+    return [...new Set(MOCK_REQUISITIONS.map((req) => req.department))];
+  }, []);
+
+  // Handle chat message
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || isProcessing) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: chatInput,
+      timestamp: new Date(),
+    };
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput('');
+    setIsProcessing(true);
+
+    // Simulate AI response (replace with actual API call to Nova Pro)
+    setTimeout(() => {
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: generateAIResponse(chatInput),
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, assistantMessage]);
+      
+      // Simulate auto-filling form based on user input
+      autoFillForm(chatInput);
+      setIsProcessing(false);
+    }, 1500);
+  };
+
+  // Simulate AI response generation
+  const generateAIResponse = (input: string): string => {
+    const loweredInput = input.toLowerCase();
+    
+    if (loweredInput.includes('laptop') || loweredInput.includes('computer')) {
+      return "I understand you need laptops. I've pre-filled the form with category 'IT Equipment'. Could you specify the quantity and preferred brand? Also, do you have a budget in mind?";
+    }
+    if (loweredInput.includes('office') || loweredInput.includes('supplies')) {
+      return "I've set the category to 'Office Supplies'. I've added a suggested supplier based on our vendor agreements. Please review and adjust the quantity and specific items needed.";
+    }
+    if (loweredInput.includes('urgent') || loweredInput.includes('asap')) {
+      return "I've marked this as urgent priority. For urgent requests over $10,000, you'll need VP approval. Shall I proceed with the expedited workflow?";
+    }
+    return "I've captured your requirements. Please review the pre-filled form below and make any necessary adjustments before submitting.";
+  };
+
+  // Auto-fill form based on AI analysis
+  const autoFillForm = (input: string) => {
+    const loweredInput = input.toLowerCase();
+    
+    if (loweredInput.includes('laptop') || loweredInput.includes('computer')) {
+      setNewRequisition((prev) => ({
+        ...prev,
+        title: 'IT Equipment - Laptops',
+        category: 'IT Equipment',
+        department: 'IT',
+        supplier: 'Dell Technologies',
+        priority: 'high',
+      }));
+    } else if (loweredInput.includes('office') || loweredInput.includes('supplies')) {
+      setNewRequisition((prev) => ({
+        ...prev,
+        title: 'Office Supplies Order',
+        category: 'Office Supplies',
+        department: 'Operations',
+        supplier: 'Staples Inc.',
+        priority: 'medium',
+      }));
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {KPI_DATA.map((kpi, index) => {
+          const Icon = kpi.icon;
+          return (
+            <div
+              key={index}
+              className="bg-white rounded-xl p-5 shadow-sm border border-surface-200 hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm text-surface-500 mb-1">{kpi.label}</p>
+                  <p className="text-2xl font-bold text-surface-900">{kpi.value}</p>
+                </div>
+                <div className="p-2 bg-aarete-sunrise/10 rounded-lg">
+                  <Icon className="h-5 w-5 text-aarete-sunrise" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-1">
+                <TrendingUp
+                  className={`h-4 w-4 ${
+                    kpi.changeType === 'positive'
+                      ? 'text-green-500'
+                      : kpi.changeType === 'negative'
+                      ? 'text-red-500'
+                      : 'text-surface-500'
+                  }`}
+                />
+                <span
+                  className={`text-sm font-medium ${
+                    kpi.changeType === 'positive'
+                      ? 'text-green-600'
+                      : kpi.changeType === 'negative'
+                      ? 'text-red-600'
+                      : 'text-surface-600'
+                  }`}
+                >
+                  {kpi.change}
+                </span>
+                <span className="text-sm text-surface-400">vs last month</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Requisitions Table Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-surface-200">
+        {/* Table Header */}
+        <div className="p-4 border-b border-surface-200">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <h2 className="text-lg font-semibold text-surface-900">Requisitions</h2>
+            
+            <div className="flex items-center gap-3">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400" />
+                <input
+                  type="text"
+                  placeholder="Search requisitions..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-4 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent w-64"
+                />
+              </div>
+
+              {/* Status Filter */}
+              <div className="relative">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent bg-white"
+                >
+                  <option value="all">All Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="processing">Processing</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400 pointer-events-none" />
+              </div>
+
+              {/* Department Filter */}
+              <div className="relative">
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                  className="appearance-none pl-3 pr-8 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent bg-white"
+                >
+                  <option value="all">All Departments</option>
+                  {departments.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400 pointer-events-none" />
+              </div>
+
+              {/* Create Button */}
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-aarete-sunrise text-white rounded-lg hover:bg-aarete-sunrise/90 transition-colors font-medium text-sm shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Create Requisition
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-surface-50 border-b border-surface-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  ID
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Title
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Requestor
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Department
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Priority
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider">
+                  Created
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-surface-100">
+              {filteredRequisitions.map((req) => (
+                <tr
+                  key={req.id}
+                  onClick={() => setSelectedRequisition(req)}
+                  className="hover:bg-surface-50 cursor-pointer transition-colors"
+                >
+                  <td className="px-4 py-3 text-sm font-medium text-aarete-sunrise">
+                    {req.id}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-surface-900">{req.title}</td>
+                  <td className="px-4 py-3 text-sm text-surface-600">{req.requestor}</td>
+                  <td className="px-4 py-3 text-sm text-surface-600">{req.department}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-surface-900">
+                    {formatCurrency(req.amount)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                        req.status
+                      )}`}
+                    >
+                      {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(
+                        req.priority
+                      )}`}
+                    >
+                      {req.priority.charAt(0).toUpperCase() + req.priority.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-surface-500">{req.createdAt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Empty State */}
+        {filteredRequisitions.length === 0 && (
+          <div className="p-12 text-center">
+            <FileText className="h-12 w-12 text-surface-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-surface-900 mb-2">No requisitions found</h3>
+            <p className="text-sm text-surface-500">
+              Try adjusting your search or filter criteria
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Requisition Detail Drawer */}
+      {selectedRequisition && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => setSelectedRequisition(null)}
+          />
+          <div className="fixed right-0 top-0 h-full w-[480px] bg-white shadow-2xl z-50 overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-surface-200 p-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-surface-900">
+                {selectedRequisition.id}
+              </h3>
+              <button
+                onClick={() => setSelectedRequisition(null)}
+                className="p-2 hover:bg-surface-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-surface-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Title & Status */}
+              <div>
+                <h4 className="text-xl font-semibold text-surface-900 mb-2">
+                  {selectedRequisition.title}
+                </h4>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                      selectedRequisition.status
+                    )}`}
+                  >
+                    {selectedRequisition.status.charAt(0).toUpperCase() +
+                      selectedRequisition.status.slice(1)}
+                  </span>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(
+                      selectedRequisition.priority
+                    )}`}
+                  >
+                    {selectedRequisition.priority.charAt(0).toUpperCase() +
+                      selectedRequisition.priority.slice(1)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs text-surface-500 uppercase tracking-wider">Requestor</p>
+                  <p className="text-sm font-medium text-surface-900">
+                    {selectedRequisition.requestor}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-surface-500 uppercase tracking-wider">Department</p>
+                  <p className="text-sm font-medium text-surface-900">
+                    {selectedRequisition.department}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-surface-500 uppercase tracking-wider">Amount</p>
+                  <p className="text-sm font-medium text-surface-900">
+                    {formatCurrency(selectedRequisition.amount)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-surface-500 uppercase tracking-wider">Supplier</p>
+                  <p className="text-sm font-medium text-surface-900">
+                    {selectedRequisition.supplier}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-surface-500 uppercase tracking-wider">Category</p>
+                  <p className="text-sm font-medium text-surface-900">
+                    {selectedRequisition.category}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-surface-500 uppercase tracking-wider">Created</p>
+                  <p className="text-sm font-medium text-surface-900">
+                    {selectedRequisition.createdAt}
+                  </p>
+                </div>
+              </div>
+
+              {/* Workflow Progress */}
+              <div className="space-y-3">
+                <p className="text-xs text-surface-500 uppercase tracking-wider">
+                  Workflow Progress
+                </p>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5, 6, 7].map((step) => (
+                    <div
+                      key={step}
+                      className={`flex-1 h-2 rounded-full ${
+                        step <= selectedRequisition.currentStep
+                          ? 'bg-aarete-sunrise'
+                          : 'bg-surface-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className="text-sm text-surface-600">
+                  Step {selectedRequisition.currentStep} of 7
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t border-surface-200">
+                <button className="flex-1 px-4 py-2 bg-aarete-sunrise text-white rounded-lg hover:bg-aarete-sunrise/90 transition-colors font-medium text-sm">
+                  View Details
+                </button>
+                <button className="flex-1 px-4 py-2 border border-surface-300 text-surface-700 rounded-lg hover:bg-surface-50 transition-colors font-medium text-sm">
+                  Edit
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Create Requisition Modal with AI Chat */}
+      {isCreateModalOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 z-40"
+            onClick={() => setIsCreateModalOpen(false)}
+          />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] max-h-[85vh] bg-white rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-surface-200 flex items-center justify-between bg-surface-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-aarete-sunrise/10 rounded-lg">
+                  <Plus className="h-5 w-5 text-aarete-sunrise" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-surface-900">
+                    Create New Requisition
+                  </h3>
+                  <p className="text-sm text-surface-500">
+                    Use AI assistant or fill manually
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="p-2 hover:bg-surface-200 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-surface-500" />
+              </button>
+            </div>
+
+            {/* Modal Body - Two Column Layout */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left - AI Chat */}
+              <div className="w-[400px] border-r border-surface-200 flex flex-col bg-surface-50">
+                <div className="p-4 border-b border-surface-200 bg-white">
+                  <div className="flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-aarete-sunrise" />
+                    <span className="font-medium text-surface-900">AI Assistant</span>
+                    <span className="px-2 py-0.5 bg-aarete-sunrise/10 text-aarete-sunrise text-xs rounded-full">
+                      Nova Pro
+                    </span>
+                  </div>
+                </div>
+
+                {/* Chat Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {chatMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex items-start gap-2 ${
+                        msg.role === 'user' ? 'flex-row-reverse' : ''
+                      }`}
+                    >
+                      <div
+                        className={`p-2 rounded-full ${
+                          msg.role === 'user'
+                            ? 'bg-aarete-sunrise text-white'
+                            : 'bg-surface-200 text-surface-600'
+                        }`}
+                      >
+                        {msg.role === 'user' ? (
+                          <User className="h-4 w-4" />
+                        ) : (
+                          <Bot className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div
+                        className={`flex-1 p-3 rounded-lg text-sm ${
+                          msg.role === 'user'
+                            ? 'bg-aarete-sunrise text-white ml-8'
+                            : 'bg-white border border-surface-200 mr-8'
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                  {isProcessing && (
+                    <div className="flex items-start gap-2">
+                      <div className="p-2 rounded-full bg-surface-200 text-surface-600">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div className="bg-white border border-surface-200 p-3 rounded-lg">
+                        <div className="flex items-center gap-2 text-sm text-surface-500">
+                          <div className="animate-pulse">Thinking...</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Chat Input */}
+                <div className="p-4 border-t border-surface-200 bg-white">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                      placeholder="Describe what you need..."
+                      className="flex-1 px-4 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={!chatInput.trim() || isProcessing}
+                      className="p-2 bg-aarete-sunrise text-white rounded-lg hover:bg-aarete-sunrise/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right - Form */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <form className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 mb-1">
+                      Title *
+                    </label>
+                    <input
+                      type="text"
+                      value={newRequisition.title}
+                      onChange={(e) =>
+                        setNewRequisition((prev) => ({ ...prev, title: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent"
+                      placeholder="Enter requisition title"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      value={newRequisition.description}
+                      onChange={(e) =>
+                        setNewRequisition((prev) => ({ ...prev, description: e.target.value }))
+                      }
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent resize-none"
+                      placeholder="Describe the procurement need"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-surface-700 mb-1">
+                        Department *
+                      </label>
+                      <select
+                        value={newRequisition.department}
+                        onChange={(e) =>
+                          setNewRequisition((prev) => ({ ...prev, department: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent bg-white"
+                      >
+                        <option value="">Select department</option>
+                        {departments.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-surface-700 mb-1">
+                        Category *
+                      </label>
+                      <select
+                        value={newRequisition.category}
+                        onChange={(e) =>
+                          setNewRequisition((prev) => ({ ...prev, category: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent bg-white"
+                      >
+                        <option value="">Select category</option>
+                        <option value="IT Equipment">IT Equipment</option>
+                        <option value="Office Supplies">Office Supplies</option>
+                        <option value="Software">Software</option>
+                        <option value="Cloud Services">Cloud Services</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Facilities">Facilities</option>
+                        <option value="Training">Training</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-surface-700 mb-1">
+                        Estimated Amount *
+                      </label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400" />
+                        <input
+                          type="text"
+                          value={newRequisition.amount}
+                          onChange={(e) =>
+                            setNewRequisition((prev) => ({ ...prev, amount: e.target.value }))
+                          }
+                          className="w-full pl-9 pr-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-surface-700 mb-1">
+                        Priority
+                      </label>
+                      <select
+                        value={newRequisition.priority}
+                        onChange={(e) =>
+                          setNewRequisition((prev) => ({ ...prev, priority: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent bg-white"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 mb-1">
+                      Preferred Supplier
+                    </label>
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-surface-400" />
+                      <input
+                        type="text"
+                        value={newRequisition.supplier}
+                        onChange={(e) =>
+                          setNewRequisition((prev) => ({ ...prev, supplier: e.target.value }))
+                        }
+                        className="w-full pl-9 pr-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent"
+                        placeholder="Enter supplier name"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-surface-700 mb-1">
+                      Business Justification
+                    </label>
+                    <textarea
+                      value={newRequisition.justification}
+                      onChange={(e) =>
+                        setNewRequisition((prev) => ({ ...prev, justification: e.target.value }))
+                      }
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-surface-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-aarete-sunrise focus:border-transparent resize-none"
+                      placeholder="Explain the business need for this purchase"
+                    />
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-surface-200 flex items-center justify-end gap-3 bg-surface-50">
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-surface-700 hover:bg-surface-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-surface-700 border border-surface-300 rounded-lg hover:bg-surface-100 transition-colors"
+              >
+                Save as Draft
+              </button>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-aarete-sunrise text-white rounded-lg hover:bg-aarete-sunrise/90 transition-colors"
+              >
+                Submit for Approval
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

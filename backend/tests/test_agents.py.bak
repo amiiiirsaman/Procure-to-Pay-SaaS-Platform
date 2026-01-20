@@ -1,0 +1,512 @@
+"""
+Unit tests for AI agents.
+"""
+
+import json
+from datetime import date, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.agents.base_agent import BedrockAgent, MockBedrockAgent
+from app.agents.requisition_agent import RequisitionAgent
+from app.agents.approval_agent import ApprovalAgent
+from app.agents.po_agent import POAgent
+from app.agents.receiving_agent import ReceivingAgent
+from app.agents.invoice_agent import InvoiceAgent
+from app.agents.fraud_agent import FraudAgent
+from app.agents.compliance_agent import ComplianceAgent
+
+
+class TestBedrockAgent:
+    """Tests for base BedrockAgent class."""
+
+    def test_mock_agent_creation(self):
+        """Test creating a mock agent."""
+        agent = MockBedrockAgent(name="test-agent")
+        assert agent.name == "test-agent"
+
+    @pytest.mark.asyncio
+    async def test_mock_agent_invoke(self):
+        """Test mock agent invocation."""
+        agent = MockBedrockAgent(name="test-agent")
+        result = await agent.invoke("Test prompt")
+
+        assert "response" in result
+        assert result["response"] == "mock_response"
+
+    @pytest.mark.asyncio
+    async def test_mock_agent_with_callback(self, mock_websocket_callback):
+        """Test mock agent with WebSocket callback."""
+        agent = MockBedrockAgent(
+            name="test-agent",
+            websocket_callback=mock_websocket_callback,
+        )
+        await agent.invoke("Test prompt")
+
+        mock_websocket_callback.assert_called()
+
+
+class TestRequisitionAgent:
+    """Tests for RequisitionAgent."""
+
+    def test_agent_creation(self):
+        """Test requisition agent creation."""
+        agent = RequisitionAgent(use_mock=True)
+        assert agent.name == "requisition_agent"
+
+    @pytest.mark.asyncio
+    async def test_validate_requisition(self):
+        """Test requisition validation."""
+        agent = RequisitionAgent(use_mock=True)
+
+        requisition_data = {
+            "id": 1,
+            "number": "REQ-000001",
+            "description": "Office supplies",
+            "total_amount": 500.00,
+            "line_items": [
+                {"description": "Pens", "quantity": 100, "unit_price": 2.50},
+                {"description": "Paper", "quantity": 10, "unit_price": 25.00},
+            ],
+        }
+
+        result = await agent.validate_requisition(requisition_data)
+
+        assert "is_valid" in result
+        assert "recommendations" in result
+
+    @pytest.mark.asyncio
+    async def test_suggest_vendors(self):
+        """Test vendor suggestion."""
+        agent = RequisitionAgent(use_mock=True)
+
+        result = await agent.suggest_vendors(
+            category="IT Equipment",
+            budget=5000.00,
+        )
+
+        assert "vendors" in result
+        assert isinstance(result["vendors"], list)
+
+    @pytest.mark.asyncio
+    async def test_check_duplicates(self):
+        """Test duplicate requisition detection."""
+        agent = RequisitionAgent(use_mock=True)
+
+        result = await agent.check_duplicates(
+            description="Office Laptop",
+            requestor_id="user-001",
+            date_range_days=30,
+        )
+
+        assert "has_duplicates" in result
+        assert "potential_duplicates" in result
+
+
+class TestApprovalAgent:
+    """Tests for ApprovalAgent."""
+
+    def test_agent_creation(self):
+        """Test approval agent creation."""
+        agent = ApprovalAgent(use_mock=True)
+        assert agent.name == "approval_agent"
+
+    @pytest.mark.asyncio
+    async def test_determine_approval_route(self):
+        """Test approval routing determination."""
+        agent = ApprovalAgent(use_mock=True)
+
+        result = await agent.determine_approval_route(
+            document_type="requisition",
+            amount=15000.00,
+            department="engineering",
+            urgency="standard",
+        )
+
+        assert "approval_chain" in result
+        assert "tier" in result
+        assert len(result["approval_chain"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_check(self):
+        """Test auto-approval eligibility."""
+        agent = ApprovalAgent(use_mock=True)
+
+        # Low amount should auto-approve
+        result = await agent.check_auto_approve(
+            amount=500.00,
+            category="Office Supplies",
+            requestor_history={"total_requests": 50, "rejection_rate": 0.02},
+        )
+
+        assert "auto_approve" in result
+        assert result["auto_approve"] is True
+
+        # High amount should not auto-approve
+        result = await agent.check_auto_approve(
+            amount=50000.00,
+            category="IT Equipment",
+            requestor_history={"total_requests": 50, "rejection_rate": 0.02},
+        )
+
+        assert result["auto_approve"] is False
+
+    @pytest.mark.asyncio
+    async def test_emergency_approval(self):
+        """Test emergency approval handling."""
+        agent = ApprovalAgent(use_mock=True)
+
+        result = await agent.handle_emergency_approval(
+            document_id=1,
+            document_type="requisition",
+            amount=10000.00,
+            justification="Production system down - need replacement parts",
+        )
+
+        assert "approved" in result
+        assert "conditions" in result
+
+
+class TestPOAgent:
+    """Tests for POAgent."""
+
+    def test_agent_creation(self):
+        """Test PO agent creation."""
+        agent = POAgent(use_mock=True)
+        assert agent.name == "po_agent"
+
+    @pytest.mark.asyncio
+    async def test_generate_po(self):
+        """Test PO generation from requisition."""
+        agent = POAgent(use_mock=True)
+
+        requisition_data = {
+            "id": 1,
+            "number": "REQ-000001",
+            "line_items": [
+                {
+                    "description": "Laptops",
+                    "quantity": 5,
+                    "unit_price": 1500.00,
+                    "suggested_supplier_id": "supplier-001",
+                },
+            ],
+            "total_amount": 7500.00,
+        }
+
+        result = await agent.generate_po(requisition_data)
+
+        assert "po_data" in result
+        assert "supplier_id" in result["po_data"]
+        assert "line_items" in result["po_data"]
+
+    @pytest.mark.asyncio
+    async def test_consolidate_requisitions(self):
+        """Test requisition consolidation into single PO."""
+        agent = POAgent(use_mock=True)
+
+        requisitions = [
+            {
+                "id": 1,
+                "suggested_supplier_id": "supplier-001",
+                "total_amount": 1000.00,
+            },
+            {
+                "id": 2,
+                "suggested_supplier_id": "supplier-001",
+                "total_amount": 2000.00,
+            },
+        ]
+
+        result = await agent.consolidate_requisitions(requisitions)
+
+        assert "consolidated" in result
+        assert "total_amount" in result
+
+    @pytest.mark.asyncio
+    async def test_select_supplier(self):
+        """Test supplier selection logic."""
+        agent = POAgent(use_mock=True)
+
+        candidates = [
+            {"id": "sup-001", "risk_score": 0.2, "price_rating": 4.5},
+            {"id": "sup-002", "risk_score": 0.1, "price_rating": 4.0},
+            {"id": "sup-003", "risk_score": 0.5, "price_rating": 5.0},
+        ]
+
+        result = await agent.select_supplier(
+            candidates=candidates,
+            criteria={"prioritize": "risk"},
+        )
+
+        assert "selected_supplier_id" in result
+        assert "reasoning" in result
+
+
+class TestReceivingAgent:
+    """Tests for ReceivingAgent."""
+
+    def test_agent_creation(self):
+        """Test receiving agent creation."""
+        agent = ReceivingAgent(use_mock=True)
+        assert agent.name == "receiving_agent"
+
+    @pytest.mark.asyncio
+    async def test_process_receipt(self):
+        """Test goods receipt processing."""
+        agent = ReceivingAgent(use_mock=True)
+
+        po_data = {
+            "id": 1,
+            "number": "PO-000001",
+            "line_items": [
+                {"id": 1, "quantity": 10, "description": "Laptops"},
+            ],
+        }
+
+        receipt_data = {
+            "line_items": [
+                {"po_line_item_id": 1, "quantity_received": 10},
+            ],
+        }
+
+        result = await agent.process_receipt(po_data, receipt_data)
+
+        assert "status" in result
+        assert "discrepancies" in result
+
+    @pytest.mark.asyncio
+    async def test_handle_discrepancy(self):
+        """Test discrepancy handling."""
+        agent = ReceivingAgent(use_mock=True)
+
+        result = await agent.handle_discrepancy(
+            po_line_id=1,
+            expected_quantity=10,
+            received_quantity=8,
+            reason="Damaged in transit",
+        )
+
+        assert "action" in result
+        assert "recommended_steps" in result
+
+    @pytest.mark.asyncio
+    async def test_quality_check(self):
+        """Test quality inspection logic."""
+        agent = ReceivingAgent(use_mock=True)
+
+        result = await agent.perform_quality_check(
+            item_category="IT Equipment",
+            item_value=1500.00,
+            supplier_quality_rating=4.5,
+        )
+
+        assert "inspection_required" in result
+        assert "inspection_level" in result
+
+
+class TestInvoiceAgent:
+    """Tests for InvoiceAgent."""
+
+    def test_agent_creation(self):
+        """Test invoice agent creation."""
+        agent = InvoiceAgent(use_mock=True)
+        assert agent.name == "invoice_agent"
+
+    @pytest.mark.asyncio
+    async def test_three_way_match(self):
+        """Test 3-way matching."""
+        agent = InvoiceAgent(use_mock=True)
+
+        po_data = {
+            "line_items": [
+                {"quantity": 10, "unit_price": 100.00},
+            ],
+            "total_amount": 1000.00,
+        }
+
+        gr_data = {
+            "line_items": [
+                {"quantity_received": 10},
+            ],
+        }
+
+        invoice_data = {
+            "line_items": [
+                {"quantity": 10, "unit_price": 100.00},
+            ],
+            "total_amount": 1000.00,
+        }
+
+        result = await agent.perform_three_way_match(
+            po_data, gr_data, invoice_data
+        )
+
+        assert "match_status" in result
+        assert "variances" in result
+
+    @pytest.mark.asyncio
+    async def test_handle_exception(self):
+        """Test exception handling for mismatched invoices."""
+        agent = InvoiceAgent(use_mock=True)
+
+        result = await agent.handle_exception(
+            invoice_id=1,
+            exception_type="quantity_mismatch",
+            variance_amount=200.00,
+            variance_percentage=10.0,
+        )
+
+        assert "resolution" in result
+        assert "requires_approval" in result
+
+    @pytest.mark.asyncio
+    async def test_calculate_payment(self):
+        """Test payment calculation."""
+        agent = InvoiceAgent(use_mock=True)
+
+        result = await agent.calculate_payment(
+            invoice_amount=10000.00,
+            payment_terms="2/10 Net 30",
+            invoice_date=date.today(),
+        )
+
+        assert "payment_amount" in result
+        assert "discount_available" in result
+        assert "due_date" in result
+
+
+class TestFraudAgent:
+    """Tests for FraudAgent."""
+
+    def test_agent_creation(self):
+        """Test fraud agent creation."""
+        agent = FraudAgent(use_mock=True)
+        assert agent.name == "fraud_agent"
+
+    @pytest.mark.asyncio
+    async def test_analyze_invoice(self):
+        """Test invoice fraud analysis."""
+        agent = FraudAgent(use_mock=True)
+
+        invoice_data = {
+            "id": 1,
+            "vendor_invoice_number": "ROUND-10000",
+            "supplier_id": "supplier-001",
+            "total_amount": 10000.00,
+            "invoice_date": date.today().isoformat(),
+        }
+
+        result = await agent.analyze_invoice(invoice_data)
+
+        assert "fraud_score" in result
+        assert "risk_level" in result
+        assert "indicators" in result
+
+    @pytest.mark.asyncio
+    async def test_check_supplier_risk(self):
+        """Test supplier risk assessment."""
+        agent = FraudAgent(use_mock=True)
+
+        result = await agent.check_supplier_risk(
+            supplier_id="supplier-001",
+            is_new=True,
+            bank_verified=False,
+            address_verified=False,
+        )
+
+        assert "risk_score" in result
+        assert "risk_factors" in result
+
+    @pytest.mark.asyncio
+    async def test_detect_patterns(self):
+        """Test fraud pattern detection."""
+        agent = FraudAgent(use_mock=True)
+
+        transactions = [
+            {"amount": 4900.00, "date": date.today().isoformat()},
+            {"amount": 4900.00, "date": date.today().isoformat()},
+            {"amount": 4900.00, "date": date.today().isoformat()},
+        ]
+
+        result = await agent.detect_patterns(
+            supplier_id="supplier-001",
+            recent_transactions=transactions,
+        )
+
+        assert "patterns_detected" in result
+        assert "alerts" in result
+
+
+class TestComplianceAgent:
+    """Tests for ComplianceAgent."""
+
+    def test_agent_creation(self):
+        """Test compliance agent creation."""
+        agent = ComplianceAgent(use_mock=True)
+        assert agent.name == "compliance_agent"
+
+    @pytest.mark.asyncio
+    async def test_validate_sod(self):
+        """Test separation of duties validation."""
+        agent = ComplianceAgent(use_mock=True)
+
+        result = await agent.validate_separation_of_duties(
+            requestor_id="user-001",
+            approver_id="user-001",  # Same person - violation
+            action="approve_requisition",
+        )
+
+        assert "is_valid" in result
+        assert result["is_valid"] is False
+        assert "violation" in result
+
+    @pytest.mark.asyncio
+    async def test_check_documentation(self):
+        """Test documentation compliance check."""
+        agent = ComplianceAgent(use_mock=True)
+
+        result = await agent.check_documentation_requirements(
+            document_type="requisition",
+            amount=50000.00,
+            documents_attached=["quote", "justification"],
+        )
+
+        assert "is_compliant" in result
+        assert "missing_documents" in result
+
+    @pytest.mark.asyncio
+    async def test_pre_payment_check(self):
+        """Test pre-payment compliance check."""
+        agent = ComplianceAgent(use_mock=True)
+
+        invoice_data = {
+            "id": 1,
+            "status": "approved",
+            "match_status": "matched",
+            "fraud_score": 15,
+            "on_hold": False,
+        }
+
+        result = await agent.perform_pre_payment_check(invoice_data)
+
+        assert "can_pay" in result
+        assert "compliance_status" in result
+
+    @pytest.mark.asyncio
+    async def test_audit_trail_generation(self):
+        """Test audit trail generation."""
+        agent = ComplianceAgent(use_mock=True)
+
+        result = await agent.generate_audit_trail(
+            document_type="invoice",
+            document_id=1,
+            actions=[
+                {"action": "created", "user": "system", "timestamp": "2024-01-01T00:00:00"},
+                {"action": "approved", "user": "manager-001", "timestamp": "2024-01-02T00:00:00"},
+            ],
+        )
+
+        assert "audit_trail" in result
+        assert "hash" in result
