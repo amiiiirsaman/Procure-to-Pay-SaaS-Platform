@@ -1,570 +1,268 @@
-# Phase 3 Step 6: Full E2E Workflow Execution & Validation
+# End-to-End Validation Guide
 
-## Objective
-Validate complete workflows from requisition creation through payment, including WebSocket events and real-time UI updates.
+Complete testing procedures for validating the P2P SaaS Platform.
 
-## Workflow Paths to Validate
+## Test Environment Setup
 
-### Path 1: Happy Path - Complete P2P Cycle
-```
-1. Create Requisition (DRAFT)
-   ↓ POST /requisitions/
-   ↓ Event: workflow_created
-   ↓
-2. Submit Requisition (PENDING_APPROVAL)
-   ↓ POST /requisitions/{id}/submit
-   ↓ Event: status_changed
-   ↓
-3. Create Purchase Order (APPROVED)
-   ↓ POST /purchase-orders/
-   ↓ Event: po_created
-   ↓
-4. Send Purchase Order (ORDERED)
-   ↓ POST /purchase-orders/{id}/send
-   ↓ Event: po_sent
-   ↓
-5. Confirm Goods Receipt (RECEIVED)
-   ↓ POST /goods-receipts/{po_id}/confirm
-   ↓ Event: goods_received
-   ↓
-6. Create Invoice (PENDING_APPROVAL)
-   ↓ POST /invoices/
-   ↓ Event: invoice_created
-   ↓
-7. Get Final Approval Report
-   ↓ GET /invoices/{id}/final-approval-report
-   ↓ Report with recommendation
-   ↓
-8. Approve Invoice (FINAL_APPROVED)
-   ↓ POST /invoices/{id}/final-approve (action: approve)
-   ↓ Event: invoice_finalized
-   ↓
-9. Create Payment (PAID)
-   ↓ POST /payments/
-   ↓ Invoice marked as PAID
+### 1. Start Backend (Mock Mode)
+
+```bash
+cd backend
+.venv\Scripts\activate
+$env:USE_MOCK_AGENTS="true"
+uvicorn app.main:app --reload --port 8000
 ```
 
-**Expected Outcomes:**
-- 8 WebSocket events broadcast
-- Database records created and updated
-- All status transitions correct
-- Real-time UI updates received
+### 2. Start Frontend
 
----
-
-### Path 2: HITL Approval Workflow
-```
-1. Create Requisition (DRAFT)
-   ↓
-2. Submit Requisition (PENDING_APPROVAL)
-   ↓
-3. Flag Requisition for Review (UNDER_REVIEW)
-   ↓ POST /requisitions/{id}/flag
-   ↓ Agent creates AgentNote
-   ↓
-4. Human Review Decision
-   ├─ Approve: POST /requisitions/{id}/approve → APPROVED
-   └─ Reject: POST /requisitions/{id}/reject → REJECTED
-   ↓
-5. Continue to PO/Invoice (if approved)
+```bash
+cd frontend
+npm run dev
 ```
 
-**Expected Outcomes:**
-- Requisition transitions to UNDER_REVIEW
-- AgentNote and AuditLog records created
-- Human decision properly recorded
-- Correct downstream processing
+### 3. Verify Services
 
----
+| Check | URL | Expected |
+|-------|-----|----------|
+| Backend Health | http://localhost:8000/health | `{"status": "healthy"}` |
+| API Docs | http://localhost:8000/docs | Swagger UI |
+| Frontend | http://localhost:5173 | Dashboard loads |
 
-### Path 3: Invoice Rejection Workflow
-```
-1. Complete steps 1-6 from Path 1
-   ↓
-2. Approve Invoice or Reject Invoice
-   ├─ Reject: POST /invoices/{id}/final-approve (action: reject)
-   │  ↓
-   │  ↓ Invoice status → REJECTED
-   │  ↓
-   │  ↓ Event: invoice_finalized (payment_scheduled: false)
-   │  ↓
-   │  ↓ No payment created
-   └─
-```
+## Workflow Validation
 
-**Expected Outcomes:**
-- Invoice marked as REJECTED
-- No payment scheduled
-- Event includes payment_scheduled: false
-- Audit trail complete
+### Test 1: Complete 9-Step Workflow
 
----
+**Objective**: Validate all workflow steps execute successfully
 
-### Path 4: Override Approval
-```
-1. Complete invoice processing with flags/concerns
-   ↓
-2. System recommends: REJECT or REVIEW_REQUIRED
-   ↓
-3. Approver chooses: APPROVE with override_reason
-   ↓ POST /invoices/{id}/final-approve
-   ├─ action: approve
-   ├─ override_reason: "Business justification..."
-   └─ comments: "Approving despite concerns"
-   ↓
-4. Invoice approved with override recorded
-   ↓ Event: invoice_finalized (override_reason in audit log)
-```
+1. Navigate to **Automation** view
+2. Select requisition from dropdown (e.g., REQ-001)
+3. Click **Run Full Workflow**
+4. Verify each step completes:
 
-**Expected Outcomes:**
-- Override reason captured in AuditLog
-- Invoice marked FINAL_APPROVED
-- Payment scheduled despite recommendation
-- Clear audit trail of override
+| Step | Expected Status | Agent |
+|------|-----------------|-------|
+| 1 | ✓ Green checkmark | Requisition |
+| 2 | ✓ Green checkmark | Approval |
+| 3 | ✓ Green checkmark | PO |
+| 4 | ✓ Green checkmark | Goods Receipt |
+| 5 | ✓ Green checkmark | Invoice |
+| 6 | ✓ Green checkmark | Fraud |
+| 7 | ✓ Green checkmark | Compliance |
+| 8 | ⏸ Yellow (HITL) | Final Approval |
+| 9 | Pending | Payment |
 
----
+5. Click **Approve** on Step 8
+6. Verify Step 9 completes with green checkmark
 
-## WebSocket Event Validation
+**Pass Criteria**: All 9 steps show green checkmarks
 
-### Event 1: workflow_created (Requisition)
-**Trigger:** POST /requisitions/
-**Payload:**
+### Test 2: HITL Rejection Flow
+
+**Objective**: Validate rejection handling
+
+1. Run workflow to Step 8 (Final Approval)
+2. Click **Reject** button
+3. Enter rejection reason
+4. Verify workflow stops with rejection status
+
+**Pass Criteria**: Workflow shows rejected state, no payment executed
+
+### Test 3: Start From Specific Step
+
+**Objective**: Validate `start_from_step` parameter
+
+1. In Automation view, select requisition
+2. Use step selector to choose Step 5
+3. Click **Run from Step 5**
+4. Verify Steps 1-4 show "Skipped" status
+5. Verify Steps 5-9 execute
+
+**Pass Criteria**: Only Steps 5-9 execute
+
+### Test 4: Real-Time WebSocket Updates
+
+**Objective**: Validate live status updates
+
+1. Open browser DevTools → Network → WS
+2. Run workflow
+3. Verify WebSocket messages received for each step
+4. Check message format:
 ```json
 {
-  "event_type": "workflow_created",
-  "document_type": "requisition",
-  "document_id": 1,
-  "document_number": "REQ-000001",
-  "status": "draft",
-  "total_amount": 5000.0,
-  "urgency": "normal",
-  "timestamp": "2026-01-13T10:30:00",
-  "message": "Requisition REQ-000001 created and ready for submission"
+  "type": "workflow_update",
+  "step": 3,
+  "status": "completed"
 }
 ```
-**Frontend Handler:** 
-- RequisitionDetailView receives event
-- Updates status badge
-- Shows in AgentActivityFeed
 
----
+**Pass Criteria**: WebSocket messages received for all steps
 
-### Event 2: status_changed (Requisition)
-**Trigger:** POST /requisitions/{id}/submit
-**Payload:**
-```json
-{
-  "event_type": "status_changed",
-  "document_type": "requisition",
-  "document_id": 1,
-  "document_number": "REQ-000001",
-  "previous_status": "draft",
-  "new_status": "pending_approval",
-  "timestamp": "2026-01-13T10:31:00",
-  "message": "Requisition REQ-000001 submitted for approval"
-}
-```
-**Frontend Handler:**
-- WorkflowTracker updates stage
-- AgentActivityFeed logs event
-- Navigation updates lists
+## API Validation
 
----
+### Test 5: Workflow API
 
-### Event 3: po_created (Purchase Order)
-**Trigger:** POST /purchase-orders/
-**Payload:**
-```json
-{
-  "event_type": "po_created",
-  "document_type": "po",
-  "document_id": 1,
-  "document_number": "PO-000001",
-  "supplier_id": "supplier1",
-  "supplier_name": "TechCorp Inc.",
-  "status": "draft",
-  "total_amount": 5000.0,
-  "timestamp": "2026-01-13T10:32:00",
-  "message": "Purchase Order PO-000001 created for supplier TechCorp Inc."
-}
-```
-**Frontend Handler:**
-- PODetailView displays PO
-- Shows supplier info
-- Enables Send action
+```bash
+# Start workflow
+curl -X POST http://localhost:8000/api/v1/agents/workflow/run \
+  -H "Content-Type: application/json" \
+  -d '{"requisition_id": 1768931613, "start_from_step": 1}'
 
----
+# Check status
+curl http://localhost:8000/api/v1/agents/workflow/status/{workflow_id}
 
-### Event 4: po_sent (Purchase Order)
-**Trigger:** POST /purchase-orders/{id}/send
-**Payload:**
-```json
-{
-  "event_type": "po_sent",
-  "document_type": "po",
-  "document_id": 1,
-  "document_number": "PO-000001",
-  "supplier_id": "supplier1",
-  "status": "ordered",
-  "timestamp": "2026-01-13T10:33:00",
-  "message": "Purchase Order PO-000001 sent to supplier"
-}
-```
-**Frontend Handler:**
-- Status updates to ORDERED
-- WorkflowTracker advances to "Sent" stage
-- Disables Send button
-- Shows delivery tracking info
-
----
-
-### Event 5: goods_received (Goods Receipt)
-**Trigger:** POST /goods-receipts/{po_id}/confirm
-**Payload:**
-```json
-{
-  "event_type": "goods_received",
-  "document_type": "goods_receipt",
-  "document_id": 1,
-  "document_number": "GR-000001",
-  "purchase_order_id": 1,
-  "purchase_order_number": "PO-000001",
-  "status": "received",
-  "items_received": 5,
-  "items_rejected": 0,
-  "all_items_received": true,
-  "timestamp": "2026-01-13T10:34:00",
-  "message": "Goods Receipt GR-000001 confirmed - All items received"
-}
-```
-**Frontend Handler:**
-- GoodsReceiptDetailView displays receipt
-- Shows received/rejected breakdown
-- Enables "Proceed to Invoice" button
-- Updates PurchaseOrdersView status
-
----
-
-### Event 6: invoice_created (Invoice)
-**Trigger:** POST /invoices/
-**Payload:**
-```json
-{
-  "event_type": "invoice_created",
-  "document_type": "invoice",
-  "document_id": 1,
-  "document_number": "INV-000001",
-  "supplier_id": "supplier1",
-  "supplier_name": "TechCorp Inc.",
-  "vendor_invoice_number": "TC-INV-12345",
-  "status": "pending_approval",
-  "total_amount": 5400.0,
-  "due_date": "2026-02-12",
-  "timestamp": "2026-01-13T10:35:00",
-  "message": "Invoice INV-000001 received from TechCorp Inc."
-}
-```
-**Frontend Handler:**
-- InvoiceDetailView displays invoice
-- Shows line items and amounts
-- Loads final approval report
-- Enables approval/rejection buttons
-
----
-
-### Event 7: agent_execution (Agent Completion)
-**Trigger:** POST /agents/{agent_name}/run
-**Payload (Success):**
-```json
-{
-  "event_type": "agent_execution",
-  "agent_name": "requisition",
-  "document_type": "requisition",
-  "document_id": 1,
-  "status": "completed",
-  "timestamp": "2026-01-13T10:36:00",
-  "flagged": false,
-  "flag_reason": null,
-  "message": "Requisition agent completed execution"
-}
-```
-**Payload (Error):**
-```json
-{
-  "event_type": "agent_execution",
-  "agent_name": "fraud",
-  "document_type": "invoice",
-  "document_id": 1,
-  "status": "error",
-  "timestamp": "2026-01-13T10:37:00",
-  "error": "Failed to connect to fraud detection service",
-  "message": "Fraud agent failed"
-}
-```
-**Frontend Handler:**
-- AgentActivityFeed displays agent actions
-- Color-codes success vs error
-- Shows flag reasons if present
-- Updates document flags
-
----
-
-### Event 8: invoice_finalized (Invoice Approval)
-**Trigger:** POST /invoices/{id}/final-approve
-**Payload (Approved):**
-```json
-{
-  "event_type": "invoice_finalized",
-  "document_type": "invoice",
-  "document_id": 1,
-  "document_number": "INV-000001",
-  "action": "approve",
-  "previous_status": "awaiting_final_approval",
-  "new_status": "final_approved",
-  "approver_id": "approver1",
-  "payment_scheduled": true,
-  "payment_due_date": "2026-02-12",
-  "timestamp": "2026-01-13T10:38:00",
-  "message": "Invoice INV-000001 approved for payment"
-}
-```
-**Payload (Rejected):**
-```json
-{
-  "event_type": "invoice_finalized",
-  "document_type": "invoice",
-  "document_id": 1,
-  "document_number": "INV-000001",
-  "action": "reject",
-  "previous_status": "awaiting_final_approval",
-  "new_status": "rejected",
-  "approver_id": "approver1",
-  "payment_scheduled": false,
-  "payment_due_date": null,
-  "timestamp": "2026-01-13T10:39:00",
-  "message": "Invoice INV-000001 rejected - requires resubmission"
-}
-```
-**Frontend Handler:**
-- InvoiceDetailView closes approval modal
-- Updates status badge
-- Shows payment info (if approved)
-- Enables payment creation
-- Updates DashboardView metrics
-
----
-
-## Real-Time UI Update Flows
-
-### Flow 1: Detail View Status Updates
-```
-WebSocket Event Received
-  ↓
-useWebSocket hook filters by document ID
-  ↓
-useEffect triggers on messages
-  ↓
-Calls GET /{document_type}/{id} to refresh
-  ↓
-setState updates component
-  ↓
-Badges, WorkflowTracker, AgentActivityFeed re-render
+# HITL decision
+curl -X POST http://localhost:8000/api/v1/agents/workflow/{workflow_id}/hitl \
+  -H "Content-Type: application/json" \
+  -d '{"step": 8, "decision": "approve"}'
 ```
 
-**Validation:** Status changes appear instantly without page refresh
+**Pass Criteria**: All endpoints return 200 with valid JSON
 
----
+### Test 6: Individual Agent Endpoints
 
-### Flow 2: List View Notifications
-```
-WebSocket Broadcast Event
-  ↓
-DashboardView/ListView receives via useWebSocket(null)
-  ↓
-Updates document counts and metrics
-  ↓
-Refreshes table data if filtering matches
-  ↓
-Shows toast notifications for important events
-```
+```bash
+# Requisition Agent
+curl -X POST http://localhost:8000/api/v1/agents/requisition/validate \
+  -H "Content-Type: application/json" \
+  -d '{"requisition_id": 1768931613}'
 
-**Validation:** List views show new items immediately
-
----
-
-### Flow 3: Cross-Document Synchronization
-```
-Invoice Event Received
-  ↓
-Checks if related PO subscribed
-  ↓
-Updates PO status in real-time
-  ↓
-Updates Requisition status
-  ↓
-All related views show consistent state
+# PO Agent
+curl -X POST http://localhost:8000/api/v1/agents/po/generate \
+  -H "Content-Type: application/json" \
+  -d '{"requisition_id": 1768931613}'
 ```
 
-**Validation:** Navigating between related documents shows synchronized states
+**Pass Criteria**: Each agent returns verdict and checks
 
----
+## UI Component Validation
 
-## Validation Checklist
+### Test 7: Dashboard Metrics
 
-### ✓ Database Integrity
-- [ ] Requisition created with all line items
-- [ ] PO created with correct supplier and amounts
-- [ ] GoodsReceipt created with line item mappings
-- [ ] Invoice created with GL accounts and cost centers
-- [ ] All foreign keys are valid
-- [ ] Status transitions are valid per DocumentStatus enum
-- [ ] Audit logs created for all major operations
-- [ ] Agent notes recorded for agent executions
+1. Navigate to **Dashboard**
+2. Verify stat cards display:
+   - Total Requisitions
+   - Pending Approvals
+   - Active POs
+   - Payment Volume
 
-### ✓ API Response Validation
-- [ ] All POST endpoints return 201 status
-- [ ] All GET endpoints return 200 status
-- [ ] Response bodies contain expected fields
-- [ ] Field types match schema definitions
-- [ ] Amounts are calculated correctly
-- [ ] Dates are formatted properly (ISO 8601)
-- [ ] Enum values match defined constants
-- [ ] Error responses include detail messages
+**Pass Criteria**: All metrics load with values
 
-### ✓ WebSocket Event Flow
-- [ ] Event emitted immediately after resource creation
-- [ ] Event JSON is valid
-- [ ] Required fields present in payload
-- [ ] Timestamps are current
-- [ ] Document IDs correct
-- [ ] Related resource IDs included where applicable
-- [ ] All 8 event types broadcast at correct times
-- [ ] Broadcast reaches all connected clients
+### Test 8: Requisition CRUD
 
-### ✓ Frontend Real-Time Updates
-- [ ] Detail views receive and process events
-- [ ] Status badges update without refresh
-- [ ] WorkflowTracker stages advance correctly
-- [ ] AgentActivityFeed shows all events
-- [ ] List views update when new items created
-- [ ] Modal dialogs reflect server state
-- [ ] Navigation links work with updated data
-- [ ] Error states display properly
+1. Navigate to **Requisitions**
+2. Click **New Requisition**
+3. Fill form and submit
+4. Verify requisition appears in list
+5. Click requisition to view details
+6. Edit requisition
+7. Delete requisition
 
-### ✓ Business Logic
-- [ ] High-value requisitions trigger approval flags
-- [ ] Approval chains determined correctly
-- [ ] 3-way match validates correctly
-- [ ] Fraud scores calculated
-- [ ] Compliance checks enforced
-- [ ] Override reasons recorded
-- [ ] Payment scheduling only when approved
-- [ ] Agent notes linked to correct documents
+**Pass Criteria**: All CRUD operations succeed
 
----
+### Test 9: 3D Procurement Graph
 
-## Manual Test Scenarios
+1. Navigate to **Procurement Graph**
+2. Verify 3D force-directed graph loads
+3. Hover over nodes to see tooltips
+4. Click and drag to rotate view
+5. Zoom in/out with scroll
 
-### Scenario 1: Quick Happy Path (15 minutes)
-1. Create requisition with 1-2 line items ($500)
-2. Submit and watch status update
-3. Create PO immediately
-4. Confirm goods receipt (full receipt)
-5. Create invoice matching PO
-6. Review approval report
-7. Approve invoice
-8. Create payment
-**Validation:** All 8 events broadcast, UI stays in sync, data integrity maintained
+**Pass Criteria**: Graph renders with document relationships
 
-### Scenario 2: HITL Approval (10 minutes)
-1. Create high-value requisition ($150,000)
-2. Submit and verify UNDER_REVIEW status
-3. Try to approve without override_reason (should fail)
-4. Approve with override_reason
-5. Verify approval recorded in audit log
-**Validation:** HITL workflow enforced, override captured
+## Automated Tests
 
-### Scenario 3: Rejection Workflow (10 minutes)
-1. Create and process requisition through invoice
-2. Check final approval report recommendations
-3. Reject invoice with specific reason
-4. Verify status is REJECTED
-5. Try to create payment (should fail)
-**Validation:** Rejection enforced, no payment created, audit trail complete
+### Backend Unit Tests
 
-### Scenario 4: Partial Receipt (10 minutes)
-1. Create requisition for 10 items
-2. Create PO
-3. Confirm receipt with only 8 items, 2 rejected
-4. Verify GR shows partial receipt
-5. Verify PO status is PARTIALLY_RECEIVED
-6. Try to create invoice (should work, but with notes)
-**Validation:** Partial receipts handled correctly, invoice can still proceed
+```bash
+cd backend
+pytest -v
 
-### Scenario 5: WebSocket Synchronization (10 minutes)
-1. Open two browser tabs to same requisition
-2. In Tab A, change requisition status
-3. Watch Tab B update in real-time
-4. Open related PO in another tab
-5. Verify all show consistent state
-**Validation:** WebSocket events reach all clients, state synchronized
+# Expected output:
+# tests/test_agents.py::test_requisition_agent PASSED
+# tests/test_agents.py::test_approval_agent PASSED
+# tests/test_api.py::test_workflow_endpoint PASSED
+# ...
+```
 
----
+### Frontend Unit Tests
+
+```bash
+cd frontend
+npm run test
+
+# Expected output:
+# ✓ AgentButton renders correctly
+# ✓ AgentResultModal displays results
+# ✓ WorkflowTracker shows all steps
+# ...
+```
+
+### E2E Tests (Playwright)
+
+```bash
+cd frontend
+npx playwright test
+
+# Run specific test file
+npx playwright test e2e/requisitions.spec.ts
+
+# Run with UI
+npx playwright test --ui
+```
 
 ## Performance Validation
 
-### Response Time Targets
-- POST /requisitions: < 200ms
-- POST /purchase-orders: < 200ms
-- POST /invoices: < 300ms
-- GET /invoices/{id}/final-approval-report: < 500ms
-- POST /invoices/{id}/final-approve: < 300ms
-- POST /payments: < 200ms
+### Test 10: Workflow Completion Time
 
-### WebSocket Metrics
-- Event broadcast latency: < 100ms
-- UI update lag: < 500ms
-- Max concurrent connections: >= 50
-- Message queue depth: stable
+| Step | Target Time |
+|------|-------------|
+| Single Step (Mock) | < 500ms |
+| Single Step (Bedrock) | < 5s |
+| Full Workflow (Mock) | < 10s |
+| Full Workflow (Bedrock) | < 60s |
 
----
+**Test Command**:
+```bash
+time curl -X POST http://localhost:8000/api/v1/agents/workflow/run \
+  -d '{"requisition_id": 1768931613}'
+```
 
-## Known Issues / Edge Cases
+## Error Handling Validation
 
-### Edge Case 1: Currency/Rounding
-**Status:** ✓ Handled
-- All amounts use Decimal for precision
-- Tax calculations checked
-- Variance thresholds configurable
+### Test 11: Invalid Requisition
 
-### Edge Case 2: Concurrent Updates
-**Status:** ⚠️ Needs testing
-- Multiple users editing same document
-- PO and Invoice creation race conditions
-- Database locks for critical operations
+```bash
+curl -X POST http://localhost:8000/api/v1/agents/workflow/run \
+  -d '{"requisition_id": 999999}'
+```
 
-### Edge Case 3: Network Outages
-**Status:** ⚠️ Needs testing
-- WebSocket reconnection handling
-- Failed event broadcasting
-- Frontend state recovery
+**Expected**: 404 error with message
 
-### Edge Case 4: Large Requisitions
-**Status:** ⚠️ Needs testing
-- 100+ line items
-- Multi-million dollar amounts
-- Approval chain complexity
+### Test 12: Network Failure Recovery
 
----
+1. Start workflow
+2. Stop backend mid-workflow
+3. Restart backend
+4. Verify frontend shows error state
+5. Retry workflow
 
-## Conclusion
+**Pass Criteria**: Graceful error handling, recovery possible
 
-This E2E validation ensures:
-1. **Data Integrity:** All records created correctly with valid relationships
-2. **Event Flow:** WebSocket events broadcast at correct times with complete payloads
-3. **Real-Time UI:** Frontend receives and processes events correctly
-4. **Business Rules:** All validations and approvals enforced
-5. **Audit Trail:** Complete history of all operations
-6. **Error Handling:** Graceful failures with meaningful error messages
+## Validation Checklist
 
-**Next Step:** Run pytest test suite for automated validation (Step 7)
+| # | Test | Status |
+|---|------|--------|
+| 1 | Complete 9-step workflow | ☐ |
+| 2 | HITL rejection flow | ☐ |
+| 3 | Start from specific step | ☐ |
+| 4 | WebSocket real-time updates | ☐ |
+| 5 | Workflow API endpoints | ☐ |
+| 6 | Individual agent endpoints | ☐ |
+| 7 | Dashboard metrics | ☐ |
+| 8 | Requisition CRUD | ☐ |
+| 9 | 3D procurement graph | ☐ |
+| 10 | Performance targets | ☐ |
+| 11 | Invalid requisition handling | ☐ |
+| 12 | Network failure recovery | ☐ |
+
+All tests passing indicates the platform is fully operational.
